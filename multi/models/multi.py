@@ -12,6 +12,37 @@ from multi.models.mlp import Discriminator
 from multi.models import encoders
 from multi.models import invertible_network_utils
 from typing import Any
+import logging
+
+logging.getLogger("ligthning.pytorch").setLevel(logging.INFO)
+
+# configure logging on module level, redirect to file
+logger = logging.getLogger("lightning.pytorch.core")
+logger.addHandler(logging.StreamHandler())
+
+
+def is_close_to_permutation(mat, threshold=1e-3):
+    # Ensure all values are between 0 and 1
+    if torch.any((mat < 0) | (mat > 1)):
+        return False
+    
+    rows, cols = mat.size()
+    
+    # Vector of ones for comparison
+    ones_vector = torch.ones(rows, dtype=torch.float32, device=mat.device)
+    
+    # Check if the sum of rows and columns are close to 1
+    if not torch.allclose(mat.sum(dim=0), ones_vector) or not torch.allclose(mat.sum(dim=1), ones_vector):
+        return False
+
+    # Threshold the matrix to get close-to-binary values
+    binary_mat = (mat > (1 - threshold)).float()
+
+    # Ensure it's a valid permutation matrix
+    if not torch.equal(binary_mat.sum(dim=0), ones_vector) or not torch.equal(binary_mat.sum(dim=1), ones_vector):
+        return False
+
+    return True
 
 
 class MuLTI(pl.LightningModule):
@@ -89,6 +120,7 @@ class MuLTI(pl.LightningModule):
             brikhoff_manifold = geoopt.BirkhoffPolytope()
             self.brikhoff_polytopes.append(
                 geoopt.ManifoldParameter(
+                    # TODO: initialize with the Doubly Stochastic Matrices
                     brikhoff_manifold.origin(n_dim, n_dim))
             )
 
@@ -153,7 +185,16 @@ class MuLTI(pl.LightningModule):
         else:
             _z1_rec = torch.cat(_z1_private_list, dim=-1)
             _z1_rec_shared_var = torch.zeros(1)
+
         if self.learn_permutation:
+            # check if the doubly stochastic matrices are close to the standard permutation matrix
+            for ds_mat in self.brikhoff_polytopes:
+                self.learn_permutation = True
+                if is_close_to_permutation(ds_mat):
+                    ds_mat.requires_grad = False
+                    self.learn_permutation = False
+                    print("The doubly stochastic reach the permutation formula")
+            
             b_opt.zero_grad()
             loss = _z1_rec_shared_var.mean()
             self.manual_backward(loss)
@@ -266,7 +307,7 @@ class MuLTI(pl.LightningModule):
         }
     
     def on_train_epoch_start(self) -> None:
-        if self.current_epoch > 50 and self.current_epoch % 5 == 0:
+        if self.current_epoch > -1 and self.current_epoch % 2 == 0:
             self.learn_permutation = True
         else:
             self.learn_permutation = False

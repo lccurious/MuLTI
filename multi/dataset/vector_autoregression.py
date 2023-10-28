@@ -169,7 +169,7 @@ class LinearVARData(Dataset):
 
 class LinearVAR(pl.LightningDataModule):
     def __init__(self, cfg, train_transforms=None, val_transforms=None, test_transforms=None, dims=None):
-        super().__init__(train_transforms, val_transforms, test_transforms, dims)
+        super().__init__()
         self.cfg = cfg
         self.n = cfg.n
         self.num_samples_train = cfg.n_log_steps

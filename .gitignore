@@ -24,6 +24,7 @@ htmlcov/
 # Local development settings
 .env
 .env.*
+outputs/
 
 # Django specific files
 *.log
