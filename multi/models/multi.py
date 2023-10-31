@@ -117,12 +117,13 @@ class MuLTI(pl.LightningModule):
                 output_normalization=output_normalization,
             ))
             self.h_list.append(lambda z: self.f_list[i](self.g_list[i](z)))
-            brikhoff_manifold = geoopt.BirkhoffPolytope()
-            self.brikhoff_polytopes.append(
-                geoopt.ManifoldParameter(
-                    # TODO: initialize with the Doubly Stochastic Matrices
-                    brikhoff_manifold.origin(n_dim, n_dim))
-            )
+            brikhoff_manifold = geoopt.BirkhoffPolytope(tol=1e-5)
+            with torch.no_grad():
+                self.brikhoff_polytopes.append(
+                    geoopt.ManifoldParameter(
+                        # TODO: initialize with the Doubly Stochastic Matrices
+                        torch.ones(n_dim, n_dim) / n_dim, manifold=brikhoff_manifold).proj_()
+                )
 
         self.discriminator = Discriminator(cfg.n * (cfg.length - cfg.time_lag))
         self.save_hyperparameters()
@@ -188,12 +189,12 @@ class MuLTI(pl.LightningModule):
 
         if self.learn_permutation:
             # check if the doubly stochastic matrices are close to the standard permutation matrix
-            for ds_mat in self.brikhoff_polytopes:
+            for mat_id, ds_mat in enumerate(self.brikhoff_polytopes):
                 self.learn_permutation = True
                 if is_close_to_permutation(ds_mat):
                     ds_mat.requires_grad = False
                     self.learn_permutation = False
-                    print("The doubly stochastic reach the permutation formula")
+                    print(f"The {mat_id}-th doubly stochastic reach the permutation formula")
             
             b_opt.zero_grad()
             loss = _z1_rec_shared_var.mean()
